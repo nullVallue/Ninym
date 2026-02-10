@@ -1,17 +1,11 @@
+import ChatPage from "./chat/[slug]/page";
 
 export default function Home() {
   return (
     <>
-      <div 
-        className="
-          w-full
-          h-full
-        "
-      >
 
+      <ChatPage params={{slug: "001chat01"}} />
 
-
-      </div>
     </>
   );
 }
