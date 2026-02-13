@@ -25,24 +25,32 @@ export default function ChatPage({ params } : { params: {slug: string}}){
 
     const { slug } = params;
     const chat = getChat(slug);
-    const [visual, setVisual] = useState(SuiseiHello);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const conversationRef = useRef<HTMLDivElement>(null);
+    const [visual, setVisual] = useState(SuiseiHello);
+    const [promptReady, setPromptReady] = useState(true);
     const [promptValue, setPromptValue] = useState("");
+    const [conversationHistory, setConversationHistory] = useState<ConversationBubble[]>([]);
 
     type ConversationBubble = {
         isSender: boolean,
         content: string,
     }
 
-    const [conversationHistory, setConversationHistory] = useState<ConversationBubble[]>([]);
-
+    const handleTextAreaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if(e.key === "Enter") {
+            e.preventDefault();
+            handleSend();
+        }
+    }
 
     const handleSend = async () => {
 
         const prompt = promptValue;
 
-        if(prompt != "" && prompt != null && prompt != undefined){
+        if(prompt != "" && prompt != null && prompt != undefined && promptReady){
 
+            setPromptReady(false);
 
             setConversationHistory((prev) => [
                 ...prev,
@@ -56,6 +64,7 @@ export default function ChatPage({ params } : { params: {slug: string}}){
             setPromptValue("");
 
             try {
+
                 const response = await sendPrompt(prompt);
 
 
@@ -82,6 +91,8 @@ export default function ChatPage({ params } : { params: {slug: string}}){
 
         }
 
+        setPromptReady(true);
+
     }
 
 
@@ -97,6 +108,17 @@ export default function ChatPage({ params } : { params: {slug: string}}){
 
 
     }, [promptValue]);
+
+    useEffect(() => {
+        const container = conversationRef.current;
+        if(container) {
+            container.scrollTo({
+                top: container.scrollHeight,
+                behavior: "smooth",
+            });
+        }
+
+    }, [conversationHistory]);
 
 
     // useEffect(() => {
@@ -126,17 +148,22 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                     w-full
 
                     px-5
+                    
                 "
             >
 
                 {/* conversation bubbles */}
                 <div
+                    ref={conversationRef}
                     className="
                         h-full
                         w-full
 
+                        md:w-[50vw]
+
                         flex
                         flex-col
+                        overflow-scroll
                     "
                 >
                     {
@@ -177,6 +204,7 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                         ref={textareaRef}
                         value={promptValue}
                         onChange={(e) => setPromptValue(e.target.value)}
+                        onKeyDown={handleTextAreaKeyDown}
                         placeholder="Start chatting..."
                         rows={1}
                         className="
@@ -192,17 +220,24 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                     />
 
                     <div
-                        className="
-                            cursor-pointer
-                        "
+                        className={
+                            promptReady ? "cursor-pointer" : "cursor-not-allowed"
+                        }
                         onClick={handleSend}
                     >
                         <Send 
                             size={20}
                             animateOnHover 
-                            className="
-                                text-secondary
-                            "
+                            className={
+                                promptReady ?
+                                `
+                                    text-secondary
+                                `
+                                :
+                                `
+                                    text-secondary/30
+                                `
+                            }
                         />
                     </div>
 

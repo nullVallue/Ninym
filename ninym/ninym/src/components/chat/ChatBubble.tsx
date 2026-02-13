@@ -1,3 +1,4 @@
+import MarkdownRenderer from "../markdown/MarkdownRenderer"
 
 
 export default function ChatBubble({isSender, content} : 
@@ -44,13 +45,13 @@ export default function ChatBubble({isSender, content} :
             >
                 <div
                     className="
-                        bg-accent-secondary
                         py-3
                         px-5
                         text-light
+                        w-full
                     "
                 >
-                    {content}
+                    <MarkdownRenderer content={content} />
                 </div>
             </div>
         )
