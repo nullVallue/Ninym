@@ -245,7 +245,7 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                 
                 <div
                     className="
-                        h-full
+                        h-[25vh]
                         w-full
                         md:w-[50vw]
                         px-32
@@ -259,7 +259,6 @@ export default function ChatPage({ params } : { params: {slug: string}}){
 
                     <AudioVisualizer 
                         audioData={audioData} 
-                        className="mb-4"
                     />
 
                 </div>
@@ -269,10 +268,11 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                 <div
                     ref={conversationRef}
                     className="
-                        h-[50vh]
+                        h-full
                         w-full
 
                         md:w-[50vw]
+                        
 
                         flex
                         flex-col

@@ -6,7 +6,7 @@ interface AudioVisualizerProps {
     lineColor?: string;
 }
 
-export default function AudioVisualizer({ audioData, className = "", lineColor = "text-secondary" }: AudioVisualizerProps) {
+export default function AudioVisualizer({ audioData, className = "", lineColor = "text-primary" }: AudioVisualizerProps) {
     
     // ASCII character ramp from low density to high density
     const ramp = [" ", ".", ":", "-", "=", "+", "*", "#", "%", "@"];
