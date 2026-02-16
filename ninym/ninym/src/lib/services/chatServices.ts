@@ -25,9 +25,26 @@ interface ModelResponse {
 
 
 export async function sendPrompt(
-    message: string,
+  message: string,
 ): Promise<ModelResponse> {
-    return await httpPost("/api/chat/prompt", {
-        prompt: message
-    })
+  return await httpPost("/api/chat/prompt", {
+    prompt: message
+  })
 }
+
+export async function generateTTS(text: string): Promise<Blob> {
+  const response = await fetch("/api/tts", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to generate TTS");
+  }
+
+  return await response.blob();
+}
+

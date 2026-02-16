@@ -6,7 +6,7 @@ import SuiseiHello from "../../../assets/chat/SuiseiHello.png"
 import SuiseiEyes from "../../../assets/chat/SuiseiEyes.gif"
 import { useEffect, useRef, useState } from "react";
 import { Send } from "@/components/animate-ui/icons/send";
-import { sendPrompt } from "@/lib/services/chatServices";
+import { generateTTS, sendPrompt } from "@/lib/services/chatServices";
 import ChatBubble from "@/components/chat/ChatBubble";
 
 type Chat = {
@@ -81,6 +81,16 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                         content: reply 
                     }
                 ]);
+
+                // Generate and play TTS
+                try {
+                    const audioBlob = await generateTTS(reply);
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    audio.play();
+                } catch (ttsError) {
+                    console.error("TTS Playback Error:", ttsError);
+                }
 
 
             } catch (error) {
