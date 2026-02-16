@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { Send } from "@/components/animate-ui/icons/send";
 import { generateTTS, sendPrompt } from "@/lib/services/chatServices";
 import ChatBubble from "@/components/chat/ChatBubble";
+import AudioVisualizer from "@/components/chat/AudioVisualizer";
 
 type Chat = {
     id: string
@@ -31,6 +32,11 @@ export default function ChatPage({ params } : { params: {slug: string}}){
     const [promptReady, setPromptReady] = useState(true);
     const [promptValue, setPromptValue] = useState("");
     const [conversationHistory, setConversationHistory] = useState<ConversationBubble[]>([]);
+    const [audioData, setAudioData] = useState<Uint8Array>(new Uint8Array(64).fill(0));
+
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const analyzerRef = useRef<AnalyserNode | null>(null);
+    const animationFrameRef = useRef<number>();
 
     type ConversationBubble = {
         isSender: boolean,
@@ -64,35 +70,105 @@ export default function ChatPage({ params } : { params: {slug: string}}){
             setPromptValue("");
 
             try {
-
                 const response = await sendPrompt(prompt);
 
-
-                if(!response.success){
+                if (!response.ok) {
                     throw new Error("Failed to send prompt");
                 }
 
-                const reply = response.message?.message?.content ?? "No comment.";
+                // Add an empty message bubble for the assistant's reply
+                setConversationHistory((prev) => [
+                    ...prev,
+                    {
+                        isSender: false,
+                        content: "" 
+                    }
+                ]);
 
+                const reader = response.body?.getReader();
+                const decoder = new TextDecoder();
+                let fullReply = "";
+
+                if (reader) {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        fullReply += chunk;
+
+                        // Update the last bubble in the history with the accumulated text
+                        setConversationHistory((prev) => {
+                            const next = [...prev];
+                            const lastIndex = next.length - 1;
+                            if (lastIndex >= 0 && !next[lastIndex].isSender) {
+                                next[lastIndex] = { ...next[lastIndex], content: fullReply };
+                            }
+                            return next;
+                        });
+                    }
+                }
+
+                const reply = fullReply || "No comment.";
+                let typingDelay = 30; // Default fallback (used for TTS sync if needed)
 
                 // Generate and play TTS
                 try {
                     // Using direct URL with a timestamp for cache busting to trigger streaming
                     const audioUrl = `/api/chat/tts?text=${encodeURIComponent(reply)}&t=${Date.now()}`;
                     const audio = new Audio(audioUrl);
-                    audio.play();
+                    
+                    // Wait for metadata to get duration for sync
+                    await new Promise((resolve) => {
+                        audio.onloadedmetadata = resolve;
+                        // Safety timeout if metadata fails to load quickly
+                        setTimeout(resolve, 1000);
+                    });
+
+                    if (audio.duration && audio.duration !== Infinity) {
+                        // Calculate delay per character to match audio duration
+                        typingDelay = (audio.duration * 1000) / reply.length;
+                    }
+
+                    // Initialize Audio Context on first play
+                    if (!audioContextRef.current) {
+                        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+                        analyzerRef.current = audioContextRef.current.createAnalyser();
+                        analyzerRef.current.fftSize = 1024; // Increased for better spectrum resolution
+                        analyzerRef.current.connect(audioContextRef.current.destination);
+                    }
+
+                    if (audioContextRef.current.state === "suspended") {
+                        await audioContextRef.current.resume();
+                    }
+
+                    const source = audioContextRef.current.createMediaElementSource(audio);
+                    source.connect(analyzerRef.current!);
+
+                    // Start visualization loop
+                    const updateVisualizer = () => {
+                        if (analyzerRef.current) {
+                            const dataArray = new Uint8Array(analyzerRef.current.frequencyBinCount);
+                            analyzerRef.current.getByteFrequencyData(dataArray);
+                            setAudioData(dataArray);
+                            animationFrameRef.current = requestAnimationFrame(updateVisualizer);
+                        }
+                    };
+
+                    updateVisualizer();
+                    
+                    await audio.play();
+
+                    audio.onended = () => {
+                        if (animationFrameRef.current) {
+                            cancelAnimationFrame(animationFrameRef.current);
+                        }
+                        setAudioData(new Uint8Array(64).fill(0));
+                    };
+
                 } catch (ttsError) {
                     console.error("TTS Playback Error:", ttsError);
                 }
-
-
-                setConversationHistory((prev) => [
-                    ...prev,
-                    {
-                        isSender: false,
-                        content: reply 
-                    }
-                ]);
 
 
 
@@ -165,11 +241,35 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                 "
             >
 
+
+                
+                <div
+                    className="
+                        h-full
+                        w-full
+                        md:w-[50vw]
+                        px-32
+
+                        flex
+                        flex-col
+                        justify-center
+                        items-center
+                    "
+                >
+
+                    <AudioVisualizer 
+                        audioData={audioData} 
+                        className="mb-4"
+                    />
+
+                </div>
+
+
                 {/* conversation bubbles */}
                 <div
                     ref={conversationRef}
                     className="
-                        h-full
+                        h-[50vh]
                         w-full
 
                         md:w-[50vw]
@@ -177,6 +277,8 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                         flex
                         flex-col
                         overflow-scroll
+                        overflow-x-hidden
+                        custom-scrollbar
                     "
                 >
                     {

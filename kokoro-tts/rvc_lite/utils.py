@@ -21,10 +21,14 @@ logging.getLogger("faiss.loader").setLevel(logging.ERROR)
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("torch").setLevel(logging.ERROR)
 
-now_dir = os.path.dirname(os.path.dirname(__file__)) # This should point to the 'Stripped' folder
+from rvc_lite.config import Config
+
+config = Config()
+now_dir = config.now_dir
+models_dir = config.models_dir
 sys.path.append(now_dir)
 
-base_path = os.path.join(now_dir, "models", "formant", "stftpitchshift")
+base_path = os.path.join(models_dir, "formant", "stftpitchshift")
 stft = base_path + ".exe" if sys.platform == "win32" else base_path
 
 
@@ -106,7 +110,7 @@ def format_title(title):
 
 
 def load_embedding(embedder_model, custom_embedder=None):
-    embedder_root = os.path.join(now_dir, "models", "embedders")
+    embedder_root = os.path.join(models_dir, "embedders")
     embedding_list = {
         "contentvec": os.path.join(embedder_root, "contentvec"),
         "spin": os.path.join(embedder_root, "spin"),

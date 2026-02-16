@@ -35,23 +35,26 @@ class TTSRequest(BaseModel):
     f0_method: str = "rmvpe"
 
 @app.post("/tts-rvc")
-async def tts_rvc_endpoint(request: TTSRequest, background_tasks: BackgroundTasks):
+async def tts_rvc_endpoint(request: TTSRequest):
     try:
-        # 1. Generate unique IDs for temporary files
-        job_id = str(uuid.uuid4())
-        temp_tts_path = f"temp_tts_{job_id}.wav"
-        output_rvc_path = f"output_{job_id}.wav"
+        import io
+        from fastapi.responses import StreamingResponse
 
-        # 2. TTS Step
-        # Rate format: +0% or -10%
+        # 1. TTS Step (In-memory)
         rates = f"+{request.rate}%" if request.rate >= 0 else f"{request.rate}%"
         communicate = edge_tts.Communicate(request.text, request.voice, rate=rates)
-        await communicate.save(temp_tts_path)
+        
+        tts_buffer = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                tts_buffer.write(chunk["data"])
+        
+        tts_buffer.seek(0)
 
-        # 3. RVC Step
-        v_converter.convert_audio(
-            audio_input_path=temp_tts_path,
-            audio_output_path=output_rvc_path,
+        # 2. RVC Step (In-memory)
+        output_buffer = v_converter.convert_audio(
+            audio_input=tts_buffer,
+            audio_output_path=None, # Trigger in-memory return
             model_path=request.pth_path,
             index_path=request.index_path,
             pitch=request.pitch,
@@ -61,25 +64,15 @@ async def tts_rvc_endpoint(request: TTSRequest, background_tasks: BackgroundTask
             protect=request.protect,
         )
 
-        # Cleanup temp TTS file
-        if os.path.exists(temp_tts_path):
-            os.remove(temp_tts_path)
-
-        # Add background task to delete the output file after response
-        background_tasks.add_task(os.remove, output_rvc_path)
-
-        return FileResponse(
-            path=output_rvc_path,
+        return StreamingResponse(
+            output_buffer,
             media_type="audio/wav",
-            filename="tts.wav"
+            headers={"Content-Disposition": "inline; filename=tts.wav"}
         )
 
     except Exception as e:
-        # Cleanup on error
-        if 'temp_tts_path' in locals() and os.path.exists(temp_tts_path):
-            os.remove(temp_tts_path)
-        if 'output_rvc_path' in locals() and os.path.exists(output_rvc_path):
-            os.remove(output_rvc_path)
+        import traceback
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

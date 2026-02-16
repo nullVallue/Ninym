@@ -26,10 +26,14 @@ interface ModelResponse {
 
 export async function sendPrompt(
   message: string,
-): Promise<ModelResponse> {
-  return await httpPost("/api/chat/prompt", {
-    prompt: message
-  })
+): Promise<Response> {
+  return await fetch("/api/chat/prompt", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ prompt: message }),
+  });
 }
 
 export async function generateTTS(text: string): Promise<Blob> {

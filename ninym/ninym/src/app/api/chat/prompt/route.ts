@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ollama from "ollama";
 
 
-export async function POST(req: NextRequest){
+export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
@@ -10,7 +10,7 @@ export async function POST(req: NextRequest){
     const { prompt } = body;
 
 
-    if(!prompt) {
+    if (!prompt) {
         return NextResponse.json(
             {
                 success: false,
@@ -23,26 +23,31 @@ export async function POST(req: NextRequest){
     }
 
 
-    const response = await ollama.chat({
-        model: "gemma3n",
+    const stream = await ollama.chat({
+        model: "qwen2.5",
         messages: [{
             role: "user",
             content: prompt,
         }],
+        stream: true,
     });
 
-
-    return NextResponse.json(
-        {
-            success: true,
-            message: response,
+    const encoder = new TextEncoder();
+    const readableStream = new ReadableStream({
+        async start(controller) {
+            for await (const chunk of stream) {
+                const content = chunk.message.content;
+                if (content) {
+                    controller.enqueue(encoder.encode(content));
+                }
+            }
+            controller.close();
         },
-        {
-            status: 200,
-        }
-    )
+    });
 
-
-
-
+    return new Response(readableStream, {
+        headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+        },
+    });
 }

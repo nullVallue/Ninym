@@ -24,7 +24,7 @@ async function handleTTS(req: NextRequest) {
             return NextResponse.json({ error: "Missing field, text is required for the call. " }, { status: 400 });
         }
 
-        const fastApiRes = await fetch("http://localhost:8800/tts-rvc", {
+        const fastApiRes = await fetch("http://localhost:8801/tts-rvc", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text: text }),

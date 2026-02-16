@@ -331,6 +331,7 @@ class VoiceConverter:
         except Exception as error:
             print(f"An error occurred during audio conversion: {error}")
             print(traceback.format_exc())
+            raise error
 
     def convert_audio_batch(
         self,

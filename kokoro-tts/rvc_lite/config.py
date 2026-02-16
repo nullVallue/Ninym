@@ -24,6 +24,21 @@ def singleton(cls):
 @singleton
 class Config:
     def __init__(self):
+        # Base paths
+        self.now_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # Explicitly look for the original Ninym models directory
+        original_models_dir = os.path.abspath(os.path.join(self.now_dir, "..", "ninym", "tts", "models"))
+        local_models_dir = os.path.join(self.now_dir, "models")
+        
+        # Verify if a core model exists in the local models dir
+        if os.path.exists(os.path.join(local_models_dir, "predictors", "rmvpe.pt")):
+            self.models_dir = local_models_dir
+        else:
+            self.models_dir = original_models_dir
+
+        print(f"RVC Config: Using models directory at {self.models_dir}")
+
         if torch.cuda.is_available():
             self.device = "cuda:0"
         elif torch.backends.mps.is_available():
@@ -43,7 +58,11 @@ class Config:
     def load_config_json(self):
         configs = {}
         for config_file in version_config_paths:
-            config_path = os.path.join(os.path.dirname(__file__), config_file)
+            config_path = os.path.join(self.models_dir, "configs", config_file)
+            if not os.path.exists(config_path):
+                # Fallback to older structure if configs folder doesn't exist
+                config_path = os.path.join(os.path.dirname(__file__), config_file)
+            
             with open(config_path, "r") as f:
                 configs[config_file] = json.load(f)
         return configs
