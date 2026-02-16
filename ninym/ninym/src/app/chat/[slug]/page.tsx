@@ -74,6 +74,18 @@ export default function ChatPage({ params } : { params: {slug: string}}){
 
                 const reply = response.message?.message?.content ?? "No comment.";
 
+
+                // Generate and play TTS
+                try {
+                    // Using direct URL with a timestamp for cache busting to trigger streaming
+                    const audioUrl = `/api/chat/tts?text=${encodeURIComponent(reply)}&t=${Date.now()}`;
+                    const audio = new Audio(audioUrl);
+                    audio.play();
+                } catch (ttsError) {
+                    console.error("TTS Playback Error:", ttsError);
+                }
+
+
                 setConversationHistory((prev) => [
                     ...prev,
                     {
@@ -82,15 +94,6 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                     }
                 ]);
 
-                // Generate and play TTS
-                try {
-                    const audioBlob = await generateTTS(reply);
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    const audio = new Audio(audioUrl);
-                    audio.play();
-                } catch (ttsError) {
-                    console.error("TTS Playback Error:", ttsError);
-                }
 
 
             } catch (error) {

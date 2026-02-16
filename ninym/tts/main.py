@@ -2,7 +2,8 @@ import os
 import uuid
 import asyncio
 import edge_tts
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from rvc_lite.infer import VoiceConverter
 import torch
@@ -34,7 +35,7 @@ class TTSRequest(BaseModel):
     f0_method: str = "rmvpe"
 
 @app.post("/tts-rvc")
-async def tts_rvc_endpoint(request: TTSRequest):
+async def tts_rvc_endpoint(request: TTSRequest, background_tasks: BackgroundTasks):
     try:
         # 1. Generate unique IDs for temporary files
         job_id = str(uuid.uuid4())
@@ -48,8 +49,6 @@ async def tts_rvc_endpoint(request: TTSRequest):
         await communicate.save(temp_tts_path)
 
         # 3. RVC Step
-        # Note: VoiceConverter.convert_audio is not async, so we might want to run it in a thread 
-        # for a real production API, but for this stripped version, direct call is fine.
         v_converter.convert_audio(
             audio_input_path=temp_tts_path,
             audio_output_path=output_rvc_path,
@@ -66,16 +65,21 @@ async def tts_rvc_endpoint(request: TTSRequest):
         if os.path.exists(temp_tts_path):
             os.remove(temp_tts_path)
 
-        return {
-            "status": "success",
-            "output_file": output_rvc_path,
-            "message": f"Conversion completed. File saved as {output_rvc_path}"
-        }
+        # Add background task to delete the output file after response
+        background_tasks.add_task(os.remove, output_rvc_path)
+
+        return FileResponse(
+            path=output_rvc_path,
+            media_type="audio/wav",
+            filename="tts.wav"
+        )
 
     except Exception as e:
         # Cleanup on error
         if 'temp_tts_path' in locals() and os.path.exists(temp_tts_path):
             os.remove(temp_tts_path)
+        if 'output_rvc_path' in locals() and os.path.exists(output_rvc_path):
+            os.remove(output_rvc_path)
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
