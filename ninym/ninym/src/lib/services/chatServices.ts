@@ -24,10 +24,12 @@ interface ModelResponse {
 
 
 
+const PROMPT_API_URL = process.env.NEXT_PUBLIC_PROMPT_API_URL || "http://localhost:8000/api/chat/prompt";
+
 export async function sendPrompt(
   message: string,
 ): Promise<Response> {
-  return await fetch("/api/chat/prompt", {
+  return await fetch(PROMPT_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
