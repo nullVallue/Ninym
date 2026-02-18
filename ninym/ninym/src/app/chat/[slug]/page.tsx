@@ -37,6 +37,7 @@ export default function ChatPage({ params } : { params: {slug: string}}){
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyzerRef = useRef<AnalyserNode | null>(null);
     const animationFrameRef = useRef<number>();
+    const wavBufferRef = useRef<Uint8Array | null>(null);
 
     type ConversationBubble = {
         isSender: boolean,
@@ -52,15 +53,67 @@ export default function ChatPage({ params } : { params: {slug: string}}){
 
 
 
-    const parseWav = (wavData: Uint8Array): { sampleRate: number; float32: Float32Array<ArrayBuffer> } => {
-        const view = new DataView(wavData.buffer);
-        const sampleRate = view.getUint32(24, true);
-        const pcm16 = new Int16Array(wavData.buffer, 44);
-        const float32 = new Float32Array(pcm16.length);
-        for (let i = 0; i < pcm16.length; i++) {
-            float32[i] = pcm16[i] / 32768;
+    const parseWav = (wavData: Uint8Array): { sampleRate: number; float32: Float32Array }[] => {
+        const results: { sampleRate: number; float32: Float32Array }[] = [];
+        
+        // Combine buffered data with new data
+        let combined: Uint8Array;
+        if (wavBufferRef.current && wavBufferRef.current.length > 0) {
+            const buffer = new Uint8Array(wavBufferRef.current.length + wavData.length);
+            buffer.set(wavBufferRef.current, 0);
+            buffer.set(wavData, wavBufferRef.current.length);
+            combined = buffer;
+            wavBufferRef.current = null;
+        } else {
+            combined = wavData;
         }
-        return { sampleRate, float32 };
+        
+        let offset = 0;
+        
+        while (offset + 44 <= combined.length) {
+            // Check for RIFF header
+            if (combined[offset] !== 0x52 || combined[offset + 1] !== 0x49 || 
+                combined[offset + 2] !== 0x46 || combined[offset + 3] !== 0x46) {
+                offset++;
+                continue;
+            }
+            
+            // Check for WAVE format
+            if (combined[offset + 8] !== 0x57 || combined[offset + 9] !== 0x41 || 
+                combined[offset + 10] !== 0x56 || combined[offset + 11] !== 0x45) {
+                offset++;
+                continue;
+            }
+            
+            // Read data size from bytes 40-43 (Subchunk2Size)
+            const view = new DataView(combined.buffer, combined.byteOffset + offset + 40, 4);
+            const dataSize = view.getUint32(0, true);
+            const wavSize = 44 + dataSize;
+            
+            // Check if we have a complete WAV
+            if (wavSize < 44 || offset + wavSize > combined.length) {
+                // Incomplete WAV - save remaining data for next chunk
+                wavBufferRef.current = combined.slice(offset);
+                break;
+            }
+            
+            try {
+                const sampleRateView = new DataView(combined.buffer, combined.byteOffset + offset + 24, 4);
+                const sampleRate = sampleRateView.getUint32(0, true);
+                const pcm16 = new Int16Array(combined.buffer, combined.byteOffset + offset + 44, dataSize / 2);
+                const float32 = new Float32Array(pcm16.length);
+                for (let i = 0; i < pcm16.length; i++) {
+                    float32[i] = pcm16[i] / 32768;
+                }
+                results.push({ sampleRate, float32 });
+                offset += wavSize;
+            } catch {
+                offset++;
+            }
+        }
+        
+        // If no complete WAVs found and no data buffered, return empty (will get more data in next chunk)
+        return results;
     };
 
     const playWavBuffer = (
@@ -132,12 +185,56 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                     if (done) break;
 
                     if (value && value.length > 44) {
-                        const { sampleRate, float32 } = parseWav(value);
-                        console.log(`Playing WAV: ${float32.length} samples at ${sampleRate}Hz`);
-                        await playWavBuffer(ctx, float32, sampleRate, analyzer);
-                        console.log("Sentence finished");
+                        const wavFiles = parseWav(value);
+                        for (const { sampleRate, float32 } of wavFiles) {
+                            await playWavBuffer(ctx, float32, sampleRate, analyzer);
+                        }
                     }
                 }
+
+                // Flush any remaining buffered data
+                if (wavBufferRef.current && wavBufferRef.current.length > 44) {
+                    const remainingData = wavBufferRef.current;
+                    wavBufferRef.current = null;
+                    const results: { sampleRate: number; float32: Float32Array }[] = [];
+                    let offset = 0;
+                    
+                    while (offset + 44 <= remainingData.length) {
+                        if (remainingData[offset] !== 0x52 || remainingData[offset + 1] !== 0x49 || 
+                            remainingData[offset + 2] !== 0x46 || remainingData[offset + 3] !== 0x46) {
+                            offset++;
+                            continue;
+                        }
+                        if (remainingData[offset + 8] !== 0x57 || remainingData[offset + 9] !== 0x41 || 
+                            remainingData[offset + 10] !== 0x56 || remainingData[offset + 11] !== 0x45) {
+                            offset++;
+                            continue;
+                        }
+                        const view = new DataView(remainingData.buffer, remainingData.byteOffset + offset + 40, 4);
+                        const dataSize = view.getUint32(0, true);
+                        const wavSize = 44 + dataSize;
+                        if (wavSize < 44 || offset + wavSize > remainingData.length) break;
+                        
+                        try {
+                            const sampleRateView = new DataView(remainingData.buffer, remainingData.byteOffset + offset + 24, 4);
+                            const sampleRate = sampleRateView.getUint32(0, true);
+                            const pcm16 = new Int16Array(remainingData.buffer, remainingData.byteOffset + offset + 44, dataSize / 2);
+                            const float32 = new Float32Array(pcm16.length);
+                            for (let i = 0; i < pcm16.length; i++) {
+                                float32[i] = pcm16[i] / 32768;
+                            }
+                            results.push({ sampleRate, float32 });
+                            offset += wavSize;
+                        } catch {
+                            offset++;
+                        }
+                    }
+                    
+                    for (const { sampleRate, float32 } of results) {
+                        await playWavBuffer(ctx, float32, sampleRate, analyzer);
+                    }
+                }
+                wavBufferRef.current = null;
 
                 console.log("All sentences played");
 
