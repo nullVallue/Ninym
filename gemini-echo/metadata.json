@@ -1,0 +1,7 @@
+{
+  "name": "Gemini Echo",
+  "description": "A minimalist, voice-first AI conversationalist powered by Gemini Live API, featuring a reactive visual orb that responds to voice input and output.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
