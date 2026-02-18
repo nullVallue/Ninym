@@ -66,8 +66,6 @@ async def chat_voice_prompt(request: Request):
 
     print("Loading PiperVoice model...")
     voice = PiperVoice.load("./en_US-hfc_female-medium.onnx")
-    # voice = PiperVoice.load("./overwatch.onnx")
-    # voice = PiperVoice.load("./en_US-bmo_voice.onnx")
     sample_rate = voice.config.sample_rate
     print(f"Model loaded successfully. Sample rate: {sample_rate} Hz")
 
