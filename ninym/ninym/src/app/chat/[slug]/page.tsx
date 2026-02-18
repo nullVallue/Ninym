@@ -6,7 +6,7 @@ import SuiseiHello from "../../../assets/chat/SuiseiHello.png"
 import SuiseiEyes from "../../../assets/chat/SuiseiEyes.gif"
 import { useEffect, useRef, useState } from "react";
 import { Send } from "@/components/animate-ui/icons/send";
-import { generateTTS, sendPrompt } from "@/lib/services/chatServices";
+import { generateTTS, sendPromptAudioStream } from "@/lib/services/chatServices";
 import ChatBubble from "@/components/chat/ChatBubble";
 import AudioVisualizer from "@/components/chat/AudioVisualizer";
 
@@ -46,9 +46,120 @@ export default function ChatPage({ params } : { params: {slug: string}}){
     const handleTextAreaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if(e.key === "Enter") {
             e.preventDefault();
-            handleSend();
+            handleAudioSend();
         }
     }
+
+
+
+    const parseWav = (wavData: Uint8Array): { sampleRate: number; float32: Float32Array<ArrayBuffer> } => {
+        const view = new DataView(wavData.buffer);
+        const sampleRate = view.getUint32(24, true);
+        const pcm16 = new Int16Array(wavData.buffer, 44);
+        const float32 = new Float32Array(pcm16.length);
+        for (let i = 0; i < pcm16.length; i++) {
+            float32[i] = pcm16[i] / 32768;
+        }
+        return { sampleRate, float32 };
+    };
+
+    const playWavBuffer = (
+        ctx: AudioContext,
+        buffer: Float32Array<ArrayBuffer>,
+        sampleRate: number,
+        analyzer: AnalyserNode
+    ): Promise<void> => {
+        return new Promise((resolve) => {
+            const audioBuffer = ctx.createBuffer(1, buffer.length, sampleRate);
+            audioBuffer.copyToChannel(buffer, 0);
+            const src = ctx.createBufferSource();
+            src.buffer = audioBuffer;
+            src.connect(analyzer);
+            src.onended = () => resolve();
+            src.start();
+        });
+    };
+
+
+    const handleAudioSend = async () => {
+        const prompt = promptValue;
+
+        if (prompt !== "" && prompt !== null && prompt !== undefined && promptReady) {
+            setPromptReady(false);
+            setPromptValue("");
+
+            const SAMPLE_RATE = 22050;
+            let visualizationTimeout: NodeJS.Timeout | null = null;
+
+            try {
+                if (!audioContextRef.current) {
+                    audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+                    analyzerRef.current = audioContextRef.current.createAnalyser();
+                    analyzerRef.current.fftSize = 1024;
+                    analyzerRef.current.connect(audioContextRef.current.destination);
+                }
+
+                if (audioContextRef.current.state === "suspended") {
+                    await audioContextRef.current.resume();
+                }
+
+                const updateVisualizer = () => {
+                    if (analyzerRef.current) {
+                        const dataArray = new Uint8Array(analyzerRef.current.frequencyBinCount);
+                        analyzerRef.current.getByteFrequencyData(dataArray);
+                        setAudioData(dataArray);
+                        animationFrameRef.current = requestAnimationFrame(updateVisualizer);
+                    }
+                };
+                updateVisualizer();
+
+                const response = await fetch("http://localhost:8000/api/chat/voicePrompt", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ prompt }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to generate voice prompt: ${response.status}`);
+                }
+
+                const reader = response.body!.getReader();
+                const ctx = audioContextRef.current;
+                const analyzer = analyzerRef.current!;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    if (value && value.length > 44) {
+                        const { sampleRate, float32 } = parseWav(value);
+                        console.log(`Playing WAV: ${float32.length} samples at ${sampleRate}Hz`);
+                        await playWavBuffer(ctx, float32, sampleRate, analyzer);
+                        console.log("Sentence finished");
+                    }
+                }
+
+                console.log("All sentences played");
+
+                if (animationFrameRef.current) {
+                    cancelAnimationFrame(animationFrameRef.current);
+                }
+                setAudioData(new Uint8Array(64).fill(0));
+
+            } catch (error) {
+                console.error("TTS Playback Error:", error);
+                if (animationFrameRef.current) {
+                    cancelAnimationFrame(animationFrameRef.current);
+                }
+                setAudioData(new Uint8Array(64).fill(0));
+            }
+
+            setPromptReady(true);
+        }
+    };
+
+
+
 
     const handleSend = async () => {
 
@@ -338,7 +449,7 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                         className={
                             promptReady ? "cursor-pointer" : "cursor-not-allowed"
                         }
-                        onClick={handleSend}
+                        onClick={handleAudioSend}
                     >
                         <Send 
                             size={20}
