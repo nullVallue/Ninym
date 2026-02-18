@@ -231,3 +231,5 @@ ruff check .
 3. When adding new dependencies, verify compatibility with existing versions
 4. Test changes in development before building for production
 5. Follow the existing code patterns in each module when adding new features
+6. **Never guess**: If you are unsure about anything (code behavior, API usage, library features, etc.), you MUST either ask the user for clarification or look it up online using web search or web fetch tools. Guess work can lead to bugs and wasted time.
+7. When asked to make commits, follow the guidelines in `COMMIT_GUIDELINES.md`
