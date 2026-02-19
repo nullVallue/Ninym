@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { Send } from "@/components/animate-ui/icons/send";
 import { generateTTS, sendPromptAudioStream } from "@/lib/services/chatServices";
 import ChatBubble from "@/components/chat/ChatBubble";
-import AudioVisualizer from "@/components/chat/AudioVisualizer";
+import ChatVisualizer from "@/components/chat/ChatVisualizer";
 
 type Chat = {
     id: string
@@ -464,10 +464,11 @@ export default function ChatPage({ params } : { params: {slug: string}}){
                         items-center
                     "
                 >
-
-                    <AudioVisualizer 
-                        audioData={audioData} 
-                    />
+                    {(() => {
+                        const hasAudio = audioData.some(v => v > 0);
+                        const mode = hasAudio ? 'playing' : promptReady ? 'idle' : 'loading';
+                        return <ChatVisualizer mode={mode} audioData={audioData} />;
+                    })()}
 
                 </div>
 
