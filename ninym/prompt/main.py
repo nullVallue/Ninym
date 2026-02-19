@@ -5,7 +5,7 @@ import ollama
 import json
 import wave
 import re
-import wave
+import uuid
 from piper import PiperVoice, SynthesisConfig
 import io
 import asyncio
@@ -67,7 +67,12 @@ def clean_text_for_tts(text: str) -> str:
     return text
 
 
+from storage import MessageStore
+from stores.in_memory_store import InMemoryMessageStore
+
 app = FastAPI()
+
+message_store: MessageStore = InMemoryMessageStore()
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,28 +87,37 @@ app.add_middleware(
 async def chat_prompt(request: Request):
     body = await request.json()
     prompt = body.get("prompt")
+    session_id = body.get("sessionId")
 
     if not prompt:
         return {"success": False, "message": "Missing required fields"}, 400
 
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
+    messages = message_store.get_messages(session_id)
+
+    message_store.add_message(session_id, "user", prompt)
+
     async def generate():
+        assistant_content = ""
         stream = ollama.chat(
             model="qwen3",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
+            messages=messages + [{"role": "user", "content": prompt}],
             stream=True,
         )
 
         for chunk in stream:
             content = chunk.message.content
             if content:
+                assistant_content += content
                 yield content
 
-    return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
+        message_store.add_message(session_id, "assistant", assistant_content)
+
+    response = StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
+    response.headers["X-Session-Id"] = session_id
+    return response
 
 
 @app.post("/api/chat/voicePrompt")
@@ -111,6 +125,8 @@ async def chat_voice_prompt(request: Request):
     print("\n=== voicePrompt API called ===")
     body = await request.json()
     prompt = body.get("prompt")
+    session_id = body.get("sessionId")
+
     print(
         f"Received prompt: {prompt[:50]}..."
         if prompt and len(prompt) > 50
@@ -120,6 +136,12 @@ async def chat_voice_prompt(request: Request):
     if not prompt:
         print("Error: Missing prompt")
         return {"success": False, "message": "Missing required fields"}, 400
+
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
+    messages = message_store.get_messages(session_id)
+    message_store.add_message(session_id, "user", prompt)
 
     print("Loading PiperVoice model...")
     voice = PiperVoice.load("./en_US-hfc_female-medium.onnx")
@@ -145,17 +167,19 @@ async def chat_voice_prompt(request: Request):
         nonlocal tts_times, total_audio_bytes, total_chars, sentence_count
         sentence_buffer = ""
         sentence_count = 0
+        assistant_content = ""
 
         print("Starting Ollama chat stream...")
         stream = ollama.chat(
             model="ninym",
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages + [{"role": "user", "content": prompt}],
             stream=True,
         )
 
         for chunk in stream:
             content = chunk.message.content
             if content:
+                assistant_content += content
                 sentence_buffer += content
                 print(f"Received chunk from Ollama: {content}")
 
@@ -249,10 +273,20 @@ async def chat_voice_prompt(request: Request):
         print(f"Real-time factor:    {rtf:.2f}x")
         print(f"{'=' * 50}\n")
 
-    return StreamingResponse(
+        message_store.add_message(session_id, "assistant", assistant_content)
+
+    response = StreamingResponse(
         generate(),
         media_type="audio/wav",
     )
+    response.headers["X-Session-Id"] = session_id
+    return response
+
+
+@app.delete("/api/chat/session/{session_id}")
+async def clear_session(session_id: str):
+    message_store.clear_session(session_id)
+    return {"success": True, "message": "Session cleared"}
 
 
 if __name__ == "__main__":
