@@ -11,7 +11,7 @@ interface ChatVisualizerProps {
     lineColor?: string;
 }
 
-type LookDirection = 'center' | 'left' | 'right' | 'up-left' | 'up-right' | 'up';
+type LookDirection = 'center' | 'left' | 'right' | 'up-left' | 'up-right' | 'up' | 'far-up-left' | 'far-up-right' | 'far-up';
 
 const LOOK_OFFSETS: Record<LookDirection, number> = {
     'center': 0,
@@ -20,27 +20,39 @@ const LOOK_OFFSETS: Record<LookDirection, number> = {
     'up-left': -2,
     'up-right': 2,
     'up': 0,
+    'far-up-left': -2,
+    'far-up-right': 2,
+    'far-up': 0,
 };
 
-const LOOK_DIRECTIONS: LookDirection[] = ['center', 'left', 'right', 'up-left', 'up-right', 'up'];
+const LOOK_DIRECTIONS: LookDirection[] = ['center', 'left', 'right', 'up-left', 'up-right', 'up', 'far-up-left', 'far-up-right', 'far-up'];
 
 const EYE_WIDTH = 6;
 const EYE_HEIGHT = 7;
 const BLINK_ROW = 3;
+
+const EYE_WIDTH_LOADING = 9;
+const EYE_HEIGHT_LOADING = 4;
 
 export default function ChatVisualizer({ mode, audioData, className = "", lineColor = "text-primary" }: ChatVisualizerProps) {
     const [phase, setPhase] = useState(0);
     const [lookOffset, setLookOffset] = useState(0);
     const [lookYOffset, setLookYOffset] = useState(0);
     const [isBlinking, setIsBlinking] = useState(false);
+    const [questionMarkPos, setQuestionMarkPos] = useState(0);
     const animationFrameRef = useRef<number>();
     const nextLookTimeRef = useRef<number>(0);
     const nextBlinkTimeRef = useRef<number>(0);
+    const lastQuestionMarkMoveRef = useRef<number>(0);
 
     useEffect(() => {
         if (mode === 'loading') {
             const animate = () => {
-                setPhase((prev) => prev + 0.15);
+                const now = Date.now();
+                if (now - lastQuestionMarkMoveRef.current >= 500) {
+                    setQuestionMarkPos((prev) => (prev + 1) % EYE_WIDTH_LOADING);
+                    lastQuestionMarkMoveRef.current = now;
+                }
                 animationFrameRef.current = requestAnimationFrame(animate);
             };
             animationFrameRef.current = requestAnimationFrame(animate);
@@ -52,11 +64,12 @@ export default function ChatVisualizer({ mode, audioData, className = "", lineCo
             };
         } else {
             setPhase(0);
+            setQuestionMarkPos(0);
         }
     }, [mode]);
 
     useEffect(() => {
-        if (mode !== 'idle') {
+        if (mode !== 'idle' && mode !== 'loading') {
             setLookOffset(0);
             setLookYOffset(0);
             setIsBlinking(false);
@@ -66,14 +79,20 @@ export default function ChatVisualizer({ mode, audioData, className = "", lineCo
         const updateIdleAnimation = () => {
             const now = Date.now();
 
-            if (now >= nextLookTimeRef.current) {
+            if (mode === 'idle' && now >= nextLookTimeRef.current) {
                 const direction = LOOK_DIRECTIONS[Math.floor(Math.random() * LOOK_DIRECTIONS.length)];
                 setLookOffset(LOOK_OFFSETS[direction]);
-                setLookYOffset(direction.includes('up') ? 1 : 0);
+                if (direction.startsWith('far-up')) {
+                    setLookYOffset(2);
+                } else if (direction.includes('up')) {
+                    setLookYOffset(1);
+                } else {
+                    setLookYOffset(0);
+                }
                 nextLookTimeRef.current = now + 2000 + Math.random() * 2000;
             }
 
-            if (now >= nextBlinkTimeRef.current) {
+            if (mode === 'idle' && now >= nextBlinkTimeRef.current) {
                 setIsBlinking(true);
                 setTimeout(() => setIsBlinking(false), 150);
                 nextBlinkTimeRef.current = now + 3000 + Math.random() * 2000;
@@ -94,7 +113,7 @@ export default function ChatVisualizer({ mode, audioData, className = "", lineCo
     }, [mode]);
 
     const ramp = [" ", ".", ":", "-", "=", "+", "*", "#", "%", "@"];
-    const ROWS = 10;
+    const ROWS = 11;
     const COLS = 48;
 
     const generateAscii = () => {
@@ -102,7 +121,10 @@ export default function ChatVisualizer({ mode, audioData, className = "", lineCo
 
         const leftEyeX = 13 + lookOffset;
         const rightEyeX = 29 + lookOffset;
-        const eyeY = 2 + lookYOffset;
+        const eyeY = 1 + lookYOffset;
+        
+        const playingLeftEyeX = 13;
+        const playingRightEyeX = 29;
 
         for (let r = 0; r < ROWS; r++) {
             let rowText = "";
@@ -110,27 +132,74 @@ export default function ChatVisualizer({ mode, audioData, className = "", lineCo
                 let char = " ";
 
                 if (mode === 'loading') {
-                    const wave = Math.sin(c * 0.08 + phase) * 0.5 + 0.5;
-                    const bounce = Math.sin(c * 0.05 + phase * 2) * 0.3;
-                    const normalized = Math.max(0, Math.min(1, wave + bounce));
-                    const rowThreshold = r / ROWS;
-                    if (normalized > rowThreshold) {
-                        const index = Math.floor(normalized * (ramp.length - 1));
-                        char = ramp[index];
-                    }
+                    const checkEye = (eyeX: number) => {
+                        if (c >= eyeX && c < eyeX + EYE_WIDTH_LOADING) {
+                            const localC = c - eyeX;
+                            const localR = r - (eyeY + 3);
+
+                            if (localR < 0 || localR >= EYE_HEIGHT_LOADING) {
+                                return null;
+                            }
+
+                            const currentQuestionMarkPos = questionMarkPos;
+                            
+                            let eyeChars = "";
+                            if (localR === 0 || localR === 1) {
+                                if (localC === 0 || localC === 1 || localC === 7 || localC === 8) {
+                                    eyeChars = "@@     @@";
+                                } else {
+                                    eyeChars = "         ";
+                                }
+                            } else if (localR === 2 || localR === 3) {
+                                if (localC >= 1 && localC <= 7) {
+                                    eyeChars = " @@@@@@@";
+                                } else {
+                                    eyeChars = "         ";
+                                }
+                            }
+
+                            if (localC === currentQuestionMarkPos && eyeChars && eyeChars[localC] === '@') {
+                                return "?";
+                            }
+                            
+                            if (eyeChars && localC < eyeChars.length) {
+                                return eyeChars[localC];
+                            }
+                        }
+                        return null;
+                    };
+
+                    const leftChar = checkEye(leftEyeX);
+                    const rightChar = checkEye(rightEyeX);
+                    char = leftChar || rightChar || " ";
                 } else if (mode === 'playing' && audioData) {
                     const data = Array.from(audioData.slice(0, audioData.length / 2));
-                    const step = data.length / COLS;
+                    const avg = data.reduce((a, b) => a + b, 0) / (data.length || 1);
+                    const intensity = Math.min(avg / 128, 1);
+                    const bounceOffset = Math.floor(intensity * 1.5);
+                    const playingEyeY = 1 - bounceOffset;
                     
-                    const start = Math.floor(c * step);
-                    const end = Math.floor(start + step);
-                    const avg = data.slice(start, end).reduce((a, b) => a + b, 0) / (end - start || 1);
-                    const normalized = Math.min(avg / 255, 1);
-                    const rowThreshold = r / ROWS;
-                    if (normalized > rowThreshold) {
-                        const index = Math.floor(normalized * (ramp.length - 1));
-                        char = ramp[index];
-                    }
+                    const checkEye = (eyeX: number) => {
+                        if (c >= eyeX && c < eyeX + EYE_WIDTH) {
+                            const localC = c - eyeX;
+                            const localR = r - playingEyeY;
+                            
+                            if (localR < 0 || localR >= EYE_HEIGHT) {
+                                return null;
+                            }
+                            
+                            if (localR === 0 || localR === EYE_HEIGHT - 1) {
+                                return " @@@@ "[localC] || null;
+                            } else {
+                                return "@@@@@@"[localC] || null;
+                            }
+                        }
+                        return null;
+                    };
+
+                    const leftChar = checkEye(playingLeftEyeX);
+                    const rightChar = checkEye(playingRightEyeX);
+                    char = leftChar || rightChar || " ";
                 } else if (mode === 'idle') {
                     const checkEye = (eyeX: number) => {
                         if (c >= eyeX && c < eyeX + EYE_WIDTH) {
