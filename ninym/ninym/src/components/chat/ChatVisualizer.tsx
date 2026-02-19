@@ -24,6 +24,10 @@ const LOOK_OFFSETS: Record<LookDirection, number> = {
 
 const LOOK_DIRECTIONS: LookDirection[] = ['center', 'left', 'right', 'up-left', 'up-right', 'up'];
 
+const EYE_WIDTH = 6;
+const EYE_HEIGHT = 7;
+const BLINK_ROW = 3;
+
 export default function ChatVisualizer({ mode, audioData, className = "", lineColor = "text-primary" }: ChatVisualizerProps) {
     const [phase, setPhase] = useState(0);
     const [lookOffset, setLookOffset] = useState(0);
@@ -90,21 +94,30 @@ export default function ChatVisualizer({ mode, audioData, className = "", lineCo
     }, [mode]);
 
     const ramp = [" ", ".", ":", "-", "=", "+", "*", "#", "%", "@"];
-    const ROWS = 8;
+    const ROWS = 10;
     const COLS = 48;
 
     const generateAscii = () => {
         let grid = "";
 
-        for (let r = ROWS - 1; r >= 0; r--) {
+        const leftEyeX = 13 + lookOffset;
+        const rightEyeX = 29 + lookOffset;
+        const eyeY = 2 + lookYOffset;
+
+        for (let r = 0; r < ROWS; r++) {
             let rowText = "";
             for (let c = 0; c < COLS; c++) {
-                let normalized = 0;
+                let char = " ";
 
                 if (mode === 'loading') {
                     const wave = Math.sin(c * 0.08 + phase) * 0.5 + 0.5;
                     const bounce = Math.sin(c * 0.05 + phase * 2) * 0.3;
-                    normalized = Math.max(0, Math.min(1, wave + bounce));
+                    const normalized = Math.max(0, Math.min(1, wave + bounce));
+                    const rowThreshold = r / ROWS;
+                    if (normalized > rowThreshold) {
+                        const index = Math.floor(normalized * (ramp.length - 1));
+                        char = ramp[index];
+                    }
                 } else if (mode === 'playing' && audioData) {
                     const data = Array.from(audioData.slice(0, audioData.length / 2));
                     const step = data.length / COLS;
@@ -112,70 +125,50 @@ export default function ChatVisualizer({ mode, audioData, className = "", lineCo
                     const start = Math.floor(c * step);
                     const end = Math.floor(start + step);
                     const avg = data.slice(start, end).reduce((a, b) => a + b, 0) / (end - start || 1);
-                    normalized = Math.min(avg / 255, 1);
-                } else if (mode === 'idle') {
-                    const leftEyeX = 14 + lookOffset;
-                    const rightEyeX = 30 + lookOffset;
-                    const eyeY = 2 - lookYOffset;
-                    const eyeWidth = 4;
-                    const eyeHeight = 4;
-
-                    let isEye = false;
-
-                    if (!isBlinking) {
-                        if (r >= eyeY && r < eyeY + eyeHeight) {
-                            const localR = r - eyeY;
-                            const localCLeft = c - leftEyeX;
-                            const localCRight = c - rightEyeX;
-
-                            if (localCLeft >= 0 && localCLeft < eyeWidth) {
-                                if (localR === 0) {
-                                    if (localCLeft === 0) isEye = localCLeft === 0 || localCLeft === 1;
-                                    else if (localCLeft === eyeWidth - 1) isEye = localCLeft === eyeWidth - 1 || localCLeft === eyeWidth - 2;
-                                    else isEye = localCLeft === 1 || localCLeft === 2;
-                                } else if (localR === eyeHeight - 1) {
-                                    if (localCLeft === 0) isEye = localCLeft === 0 || localCLeft === 1;
-                                    else if (localCLeft === eyeWidth - 1) isEye = localCLeft === eyeWidth - 1 || localCLeft === eyeWidth - 2;
-                                    else isEye = localCLeft === 1 || localCLeft === 2;
-                                } else {
-                                    isEye = localCLeft === 0 || localCLeft === eyeWidth - 1 || localCLeft === 1 || localCLeft === 2;
-                                }
-                            }
-
-                            if (localCRight >= 0 && localCRight < eyeWidth && !isEye) {
-                                if (localR === 0) {
-                                    if (localCRight === 0) isEye = localCRight === 0 || localCRight === 1;
-                                    else if (localCRight === eyeWidth - 1) isEye = localCRight === eyeWidth - 1 || localCRight === eyeWidth - 2;
-                                    else isEye = localCRight === 1 || localCRight === 2;
-                                } else if (localR === eyeHeight - 1) {
-                                    if (localCRight === 0) isEye = localCRight === 0 || localCRight === 1;
-                                    else if (localCRight === eyeWidth - 1) isEye = localCRight === eyeWidth - 1 || localCRight === eyeWidth - 2;
-                                    else isEye = localCRight === 1 || localCRight === 2;
-                                } else {
-                                    isEye = localCRight === 0 || localCRight === eyeWidth - 1 || localCRight === 1 || localCRight === 2;
-                                }
-                            }
-                        }
-                    } else {
-                        const leftEyeX = 14 + lookOffset;
-                        const rightEyeX = 30 + lookOffset;
-                        if (r === 3 - lookYOffset) {
-                            if (c >= leftEyeX && c < leftEyeX + eyeWidth) isEye = true;
-                            if (c >= rightEyeX && c < rightEyeX + eyeWidth) isEye = true;
-                        }
+                    const normalized = Math.min(avg / 255, 1);
+                    const rowThreshold = r / ROWS;
+                    if (normalized > rowThreshold) {
+                        const index = Math.floor(normalized * (ramp.length - 1));
+                        char = ramp[index];
                     }
+                } else if (mode === 'idle') {
+                    const checkEye = (eyeX: number) => {
+                        if (c >= eyeX && c < eyeX + EYE_WIDTH) {
+                            const localC = c - eyeX;
+                            const localR = r - eyeY;
+                            
+                            if (localR < 0 || localR >= EYE_HEIGHT) {
+                                return null;
+                            }
+                            
+                            let eyeChars = "";
+                            if (isBlinking) {
+                                if (localR === BLINK_ROW) {
+                                    eyeChars = "@@@@@@";
+                                } else {
+                                    eyeChars = "";
+                                }
+                            } else {
+                                if (localR === 0 || localR === EYE_HEIGHT - 1) {
+                                    eyeChars = " @@@@ ";
+                                } else {
+                                    eyeChars = "@@@@@@";
+                                }
+                            }
+                            
+                            if (eyeChars && localC < eyeChars.length) {
+                                return eyeChars[localC];
+                            }
+                        }
+                        return null;
+                    };
 
-                    normalized = isEye ? 1 : 0;
+                    const leftChar = checkEye(leftEyeX);
+                    const rightChar = checkEye(rightEyeX);
+                    char = leftChar || rightChar || " ";
                 }
 
-                const rowThreshold = r / ROWS;
-
-                if (normalized > rowThreshold) {
-                    const index = Math.floor(normalized * (ramp.length - 1));
-                    rowText += ramp[index];
-                } else {
-                    rowText += " ";
-                }
+                rowText += char;
             }
             grid += rowText + "\n";
         }
