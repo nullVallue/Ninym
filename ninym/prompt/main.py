@@ -5,10 +5,67 @@ import ollama
 import json
 import wave
 import re
+import wave
 from piper import PiperVoice, SynthesisConfig
 import io
 import asyncio
 import time
+import unicodedata
+
+
+def clean_text_for_tts(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+
+    emoji_pattern = re.compile(
+        "["
+        "\U0001f600-\U0001f64f"  # emoticons
+        "\U0001f300-\U0001f5ff"  # symbols & pictographs
+        "\U0001f680-\U0001f6ff"  # transport & map symbols
+        "\U0001f1e0-\U0001f1ff"  # flags
+        "\U00002702-\U000027b0"  # dingbats
+        "\U000024c2-\U0001f251"  # enclosed characters
+        "\U0001f926-\U0001f937"  # additional emoticons
+        "\U00010000-\U0010ffff"  # additional unicode
+        "\u2640-\u2642"  # gender symbols
+        "\u2600-\u2b55"  # misc symbols
+        "\u200d"  # zero width joiner
+        "\u23cf"  # eject symbol
+        "\u23e9"  # fast forward
+        "\u231a"  # watch
+        "\ufe0f"  # dingbats
+        "\u3030"  # wavy dash
+        "]+",
+        flags=re.UNICODE,
+    )
+    text = emoji_pattern.sub("", text)
+
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+    text = re.sub(r"__(.+?)__", r"\1", text)
+    text = re.sub(r"_(.+?)_", r"\1", text)
+    text = re.sub(r"~~(.+?)~~", r"\1", text)
+    text = re.sub(r"`(.+?)`", r"\1", text)
+
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+
+    text = re.sub(r"^[-*+]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)
+
+    text = re.sub(r"^>\s+", "", text, flags=re.MULTILINE)
+
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    text = re.sub(r"```.*", "", text)
+
+    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
+
+    text = re.sub(r"^\s*[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
+
+    text = re.sub(r"\s+", " ", text)
+
+    text = text.strip()
+
+    return text
+
 
 app = FastAPI()
 
@@ -66,6 +123,12 @@ async def chat_voice_prompt(request: Request):
 
     print("Loading PiperVoice model...")
     voice = PiperVoice.load("./en_US-hfc_female-medium.onnx")
+    # voice = PiperVoice.load("./otherModels/alexa.onnx")
+    # voice = PiperVoice.load("./otherModels/cortana.onnx")
+    # voice = PiperVoice.load("./otherModels/glados.onnx")
+    # voice = PiperVoice.load("./otherModels/google_assistant.onnx")
+    # voice = PiperVoice.load("./otherModels/zarvox.onnx")
+    # voice = PiperVoice.load("./otherModels/jarvis-high.onnx")
     sample_rate = voice.config.sample_rate
     print(f"Model loaded successfully. Sample rate: {sample_rate} Hz")
 
@@ -85,7 +148,7 @@ async def chat_voice_prompt(request: Request):
 
         print("Starting Ollama chat stream...")
         stream = ollama.chat(
-            model="qwen3",
+            model="ninym",
             messages=[{"role": "user", "content": prompt}],
             stream=True,
         )
